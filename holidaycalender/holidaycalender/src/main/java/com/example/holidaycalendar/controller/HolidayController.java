@@ -22,10 +22,21 @@ public class HolidayController {
     @GetMapping("/holidays")
     public ResponseEntity<List<Map<String, Object>>> getHolidays(@RequestParam String country) {
         int year = LocalDate.now().getYear();
-        String url = "https://date.nager.at/api/v3/PublicHolidays/" + year + "/" + country;
+        String apiKey = "duG4MS7qGIylqGrOdVMUf2VwxrqksSUL"; // Replace with your actual Calendarific API key
 
-        List<Map<String, Object>> holidays = restTemplate.getForObject(url, List.class);
+        String url = "https://calendarific.com/api/v2/holidays"
+                + "?api_key=" + apiKey
+                + "&country=" + country
+                + "&year=" + year;
+
+        // 1. First get the full JSON response as a Map
+        Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+
+        // 2. Navigate to the 'holidays' list inside 'response'
+        Map<String, Object> inner = (Map<String, Object>) response.get("response");
+        List<Map<String, Object>> holidays = (List<Map<String, Object>>) inner.get("holidays");
 
         return ResponseEntity.ok(holidays);
     }
+
 }
