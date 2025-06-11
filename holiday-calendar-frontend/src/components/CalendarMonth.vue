@@ -7,27 +7,26 @@
     </div>
 
     <div class="dates">
-      <!-- empty slots before first day -->
       <div
-        v-for="n in firstDayOfMonth"
-        :key="'empty-' + n"
-        class="date empty"
-      ></div>
-
-      <!-- actual dates -->
-      <div
-        v-for="date in daysInMonth"
-        :key="date"
-        :class="dateClass(date)"
+        v-for="(week, wIndex) in weeks"
+        :key="'week-' + wIndex"
+        class="week-row"
       >
-        <div class="date-number">{{ date }}</div>
-        <div v-if="holidayNamesForDate(date).length > 0" class="holidays">
-          <span
-            v-for="(h, i) in holidayNamesForDate(date)"
-            :key="i"
-            class="holiday-name"
-            >{{ h }}</span
-          >
+        <div
+          v-for="(day, dIndex) in week"
+          :key="'day-' + wIndex + '-' + dIndex"
+          :class="day ? dateClass(day) : 'date empty'"
+        >
+          <div v-if="day" class="date-number">{{ day }}</div>
+          <div v-if="day && holidayNamesForDate(day).length" class="holidays">
+            <span
+              v-for="(h, i) in holidayNamesForDate(day)"
+              :key="i"
+              class="holiday-name"
+            >
+              {{ h }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -38,10 +37,12 @@
 export default {
   name: 'CalendarMonth',
   props: {
-    year: { type: Number, required: true },
-    month: { type: Number, required: true }, // 0 based
-    holidays: { type: Array, required: true }
+    year: Number,
+    month: Number,
+    holidays: Array,
+    showOnlyHolidayWeeks: Boolean
   },
+
   data() {
     return {
       weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
@@ -49,80 +50,106 @@ export default {
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'
       ]
-    };
-  },
-  computed: {
-    daysInMonth() {
-      return new Date(this.year, this.month + 1, 0).getDate();
-    },
-    firstDayOfMonth() {
-      return new Date(this.year, this.month, 1).getDay();
-    },
-    holidayWeeks() {
-      const map = new Map();
-
-      this.holidays.forEach(holiday => {
-        const date = new Date(holiday.date);
-        // Only count holidays for this month & year
-        if (date.getFullYear() === this.year && date.getMonth() === this.month) {
-          const weekNum = this.getWeekNumber(date);
-          if (!map.has(weekNum)) {
-            map.set(weekNum, []);
-          }
-          map.get(weekNum).push(holiday);
-        }
-      });
-
-      return map;
     }
   },
-  methods: {
-    getWeekNumber(date) {
-      const d = new Date(date.getTime());
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-      const week1 = new Date(d.getFullYear(), 0, 4);
-      return (
-        1 +
-        Math.round(
-          ((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) /
-            7
-        )
-      );
-    },
-    holidayNamesForDate(date) {
-      const dateStr = this.formatDate(this.year, this.month + 1, date);
-      return this.holidays
-        .filter(h => h.date === dateStr)
-        .map(h => h.localName);
-    },
-    formatDate(year, month, day) {
-      const m = month < 10 ? '0' + month : month;
-      const d = day < 10 ? '0' + day : day;
-      return `${year}-${m}-${d}`;
-    },
-    dateClass(date) {
-      const dateStr = this.formatDate(this.year, this.month + 1, date);
-      const holidayCount = this.holidays.filter(h => h.date === dateStr).length;
 
-      const weekNum = this.getWeekNumber(new Date(this.year, this.month, date));
-      const weekHolidayCount = this.holidayWeeks.get(weekNum)?.length || 0;
+  computed: {
+    daysInMonth() {
+      return new Date(this.year, this.month + 1, 0).getDate()
+    },
+
+    firstDayOfMonth() {
+      return new Date(this.year, this.month, 1).getDay()
+    },
+
+    weeks() {
+      const days = []
+      for (let i = 0; i < this.firstDayOfMonth; i++) days.push(null)
+      for (let d = 1; d <= this.daysInMonth; d++) days.push(d)
+      while (days.length % 7 !== 0) days.push(null)
+
+      const result = []
+      for (let i = 0; i < days.length; i += 7) {
+        const week = days.slice(i, i + 7)
+        const hasHoliday = week.some(day => {
+          if (!day) return false
+          const dateStr = this.formatDate(this.year, this.month + 1, day)
+          return this.holidays.some(h => h.date.iso === dateStr)
+        })
+        if (this.showOnlyHolidayWeeks) {
+          if (hasHoliday) result.push(week)
+        } else {
+          result.push(week)
+        }
+      }
+
+      return result
+    },
+
+    holidayWeeks() {
+      const map = new Map()
+      this.holidays.forEach(h => {
+        const date = new Date(h.date.iso)
+        if (date.getFullYear() === this.year && date.getMonth() === this.month) {
+          const weekNum = this.getWeekNumber(date)
+          if (!map.has(weekNum)) map.set(weekNum, [])
+          map.get(weekNum).push(h)
+        }
+      })
+      return map
+    }
+  },
+
+  methods: {
+    formatDate(year, month, day) {
+      return `${year}-${month.toString().padStart(2, '0')}-${day
+        .toString()
+        .padStart(2, '0')}`
+    },
+
+    getWeekNumber(date) {
+  const startOfYear = new Date(date.getFullYear(), 0, 1);
+  const daysSinceStart = Math.floor((date - startOfYear) / (24 * 60 * 60 * 1000));
+  const startDay = startOfYear.getDay(); // Sunday = 0
+
+  // Adjust days since start to align week with Sunday as start
+  const adjustedDays = daysSinceStart + startDay;
+
+  return Math.floor(adjustedDays / 7) + 1;
+},
+
+    holidayNamesForDate(day) {
+      const dateStr = this.formatDate(this.year, this.month + 1, day)
+      return this.holidays
+        .filter(h => h.date.iso === dateStr)
+        .map(h => h.name)
+    },
+
+    dateClass(day) {
+      const dateStr = this.formatDate(this.year, this.month + 1, day)
+      const isHoliday = this.holidays.some(h => h.date.iso === dateStr)
+      const weekNum = this.getWeekNumber(new Date(this.year, this.month, day))
+	  const holidaysInWeek = this.holidayWeeks.get(weekNum) || [];
+const distinctHolidayDates = new Set(holidaysInWeek.map(h => h.date.iso));
+const count = distinctHolidayDates.size;
+
 
       return {
         date: true,
-        holiday: holidayCount > 0,
-        'holiday-day': holidayCount > 0,
-        'week-light-green': weekHolidayCount === 1,
-        'week-dark-green': weekHolidayCount > 1,
-      };
+        'holiday-day': isHoliday,
+        'week-light-green': count === 1,
+        'week-dark-green': count > 1,
+        blurred: this.showOnlyHolidayWeeks && count === 0
+      }
     }
   }
-};
+}
 </script>
 
 <style scoped>
+
 .calendar-month {
-  max-width: 220px;
+  max-width: 280px; /* increased size */
   border: 1px solid #ccc;
   margin-bottom: 15px;
 }
@@ -139,33 +166,34 @@ export default {
   background-color: #eee;
 }
 
+.weekday,
+.date {
+  width: calc(100% / 7);
+  height: 70px; /* increased height */
+  width: 50px;
+  border: 1px solid #ddd;
+  box-sizing: border-box;
+  padding: 3px;
+  position: relative;
+  background-color: white;
+  overflow: hidden;
+}
+
 .weekday {
-  flex: 1;
   padding: 8px 0;
-  text-align: center;
   font-weight: bold;
   font-size: 0.9em;
+  border: 1px solid #ccc;
+  background-color: #eee;
 }
 
 .dates {
   display: flex;
-  flex-wrap: wrap;
-}
-
-.date {
-  width: calc(100% / 7);
-  height: 70px;
-  border: 1px solid #ddd;
-  box-sizing: border-box;
-  padding: 3px;
-  background-color: white;
-  color: black;
-  position: relative;
+  flex-direction: column;
 }
 
 .date.empty {
-  border: none;
-  background: none;
+  background-color: #f8f8f8;
 }
 
 .date.holiday-day .date-number {
@@ -182,16 +210,31 @@ export default {
   color: white;
 }
 
+.week-row {
+  display: flex;
+}
+
+.date-number {
+  font-size: 0.85em;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
 .holidays {
   font-size: 0.65em;
   margin-top: 5px;
+  max-height: 50px;
   overflow: hidden;
-  height: 40px;
-  overflow-y: auto;
+  white-space: normal;
 }
 
 .holiday-name {
   display: block;
   color: red;
+  white-space: normal; /* allow wrapping */
+  word-break: break-word; /* break long words if needed */
+  line-height: 1.1;
 }
+
+
 </style>
